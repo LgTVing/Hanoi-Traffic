@@ -1,0 +1,4 @@
+# ignore all file in folder __pycache__ and .env
+__pycache__/
+.env
+.venv
