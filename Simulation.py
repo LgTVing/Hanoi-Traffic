@@ -6,6 +6,7 @@ mà chỉ gọi đúng thứ tự giữa các module chuyên trách.
 """
 
 import pygame
+import os
 
 from traffic_light_logic import Intersection
 from traffic_light_renderer import draw_traffic_signals
@@ -26,6 +27,16 @@ class SimulationMap:
         # VehicleController thao tác trực tiếp trên self.vehicles và đọc trạng thái đèn qua self.intersections.
         self.vehicle_controller = VehicleController(self.intersections, self.vehicles)
 
+        # Load ArUco markers (0: top-left, 1: top-right, 2: bottom-left, 3: bottom-right)
+        self.markers = []
+        for i in range(4):
+            path = os.path.join("aruco marker", f"4x4_1000-{i}.svg")
+            try:
+                self.markers.append(pygame.image.load(path))
+            except Exception as e:
+                print(f"Lỗi load marker {path}: {e}")
+                self.markers.append(None)
+
     def update(self, dt):
         # 1) Cập nhật xe trước để thu thập waiting_counts mới cho mỗi giao lộ.
         self.vehicle_controller.update(dt)
@@ -35,33 +46,37 @@ class SimulationMap:
         for ic in self.intersections:
             ic.update(dt)
 
-    def _draw_qr_corner_markers(self, surface):
-        # Vẽ 4 marker kiểu finder-pattern của QR để camera nhận diện biên màn hình.
+    def _draw_aruco_markers(self, surface):
+        # Vẽ 4 ArUco markers để nhận diện và canh lề 4 góc.
         screen_w, screen_h = surface.get_size()
 
-        # Kích thước marker tự co giãn theo màn hình, có giới hạn min/max để luôn dễ nhận.
-        outer = max(34, min(78, int(min(screen_w, screen_h) * 0.065)))
-        ring = max(6, outer // 5)
-        quiet = max(5, ring)
+        # Kích thước marker tự co giãn theo màn hình
+        marker_size = max(40, min(100, int(min(screen_w, screen_h) * 0.08)))
+        quiet = 5
         margin = max(10, quiet + 4)
 
-        def draw_finder(x, y):
-            # Quiet zone trắng quanh marker giúp camera tách khối tốt hơn.
-            pygame.draw.rect(surface, (255, 255, 255), (x - quiet, y - quiet, outer + 2 * quiet, outer + 2 * quiet))
+        # Tọa độ 4 góc (phải khớp thứ tự 0,1,2,3 lúc load)
+        # 0: Top-Left, 1: Top-Right, 2: Bottom-Left, 3: Bottom-Right
+        positions = [
+            (margin, margin),
+            (screen_w - margin - marker_size, margin),
+            (margin, screen_h - margin - marker_size),
+            (screen_w - margin - marker_size, screen_h - margin - marker_size)
+        ]
 
-            # 3 lớp vuông QR: đen ngoài, trắng giữa, đen trong.
-            pygame.draw.rect(surface, (0, 0, 0), (x, y, outer, outer))
-            pygame.draw.rect(surface, (255, 255, 255), (x + ring, y + ring, outer - 2 * ring, outer - 2 * ring))
-            pygame.draw.rect(surface, (0, 0, 0), (x + 2 * ring, y + 2 * ring, outer - 4 * ring, outer - 4 * ring))
+        if not hasattr(self, 'markers'):
+            return
 
-        # Tọa độ 4 góc trong khung nhìn.
-        tl = (margin, margin)
-        tr = (screen_w - margin - outer, margin)
-        bl = (margin, screen_h - margin - outer)
-        br = (screen_w - margin - outer, screen_h - margin - outer)
-
-        for px, py in (tl, tr, bl, br):
-            draw_finder(px, py)
+        for img, (px, py) in zip(self.markers, positions):
+            if img is None:
+                continue
+            
+            # Draw quiet zone (white margin)
+            pygame.draw.rect(surface, (255, 255, 255), (px - quiet, py - quiet, marker_size + 2 * quiet, marker_size + 2 * quiet))
+            
+            # Scale and draw marker
+            scaled_img = pygame.transform.smoothscale(img, (marker_size, marker_size))
+            surface.blit(scaled_img, (px, py))
 
     def draw(self, surface):
         # Vẽ nền hạ tầng trước để các lớp sau (xe, đèn) đè lên đúng thứ tự thị giác.
@@ -75,4 +90,4 @@ class SimulationMap:
         draw_traffic_signals(surface, self.intersections)
 
         # Vẽ marker hiệu chuẩn trên cùng để luôn rõ ràng cho camera.
-        self._draw_qr_corner_markers(surface)
+        self._draw_aruco_markers(surface)
