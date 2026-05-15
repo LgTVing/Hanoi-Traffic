@@ -156,11 +156,6 @@ Lệnh có hiệu lực **ngay khi Simulator nhận được**.
 
 ## 5. Cấu Hình Kết Nối
 
-```
-SIMULATOR_IP=192.168.0.1
-SIMULATOR_PORT=1883
-```
-
 **Broker MQTT:**
 ```
 IP=3.107.18.217
