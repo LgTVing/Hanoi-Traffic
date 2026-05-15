@@ -10,6 +10,7 @@ import os
 
 from traffic_light_logic import Intersection
 from traffic_light_renderer import draw_traffic_signals
+from control_light import ControlLightFileReader
 from control_vehicle import VehicleController
 from road_layout import draw_roads_and_islands, get_intersection_points
 
@@ -29,6 +30,9 @@ class SimulationMap:
         # VehicleController thao tác trực tiếp trên self.vehicles và đọc trạng thái đèn qua self.intersections.
         self.vehicle_controller = VehicleController(self.intersections, self.vehicles)
 
+        # Doc file output_control_light.json de cap nhat trang thai den.
+        self.light_reader = ControlLightFileReader()
+
         # Load ArUco markers (0: top-left, 1: top-right, 2: bottom-left, 3: bottom-right)
         self.markers = []
         for i in range(4):
@@ -40,17 +44,11 @@ class SimulationMap:
                 self.markers.append(None)
 
     def update(self, dt):
-        # 1) Cập nhật xe trước để thu thập waiting_counts mới cho mỗi giao lộ.
+        # 0) Doc trang thai den tu file output (server).
+        self.light_reader.update_intersections(self.intersections)
+
+        # 1) Cap nhat xe theo trang thai den da doc.
         self.vehicle_controller.update(dt)
-
-        # 2) Sau khi đã biết số xe chờ, cập nhật thời gian/pha đèn cho từng giao lộ.
-        # Vòng for này giúp mỗi nút giao tự tiến hóa độc lập theo mật độ chờ cục bộ của chính nó.
-        for ic in self.intersections:
-            ic.update(dt)
-
-        # Ghi trang thai pha den ra file de he thong ngoai doc.
-        if hasattr(Intersection, "write_phase_output"):
-            Intersection.write_phase_output(self.intersections)
 
     def _draw_aruco_markers(self, surface):
         # Vẽ 4 ArUco markers để nhận diện và canh lề 4 góc.

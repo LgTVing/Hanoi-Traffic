@@ -8,6 +8,8 @@ Luồng chạy chính:
 4) Thoát an toàn khi người dùng đóng cửa sổ.
 """
 
+import json
+import os
 import pygame
 import sys
 from datetime import datetime
@@ -16,6 +18,13 @@ from config import (
     FULLSCREEN_ENABLED,
     DEFAULT_SCREEN_WIDTH,
     DEFAULT_SCREEN_HEIGHT,
+    ENABLE_LOCAL_LOGIC_SERVER,
+    ENABLE_INPUT_DEMO,
+    INPUT_DEMO_LOG,
+    LIGHT_INPUT_DEVICE_ID,
+    LIGHT_INPUT_FILE,
+    LIGHT_INPUT_LANE_TOTAL,
+    LIGHT_INPUT_REFRESH_SEC,
     R,
     STOP_LINE_DIST,
     NORTH,
@@ -24,7 +33,9 @@ from config import (
     WEST,
 )
 from road_layout import configure_layout
+from road_layout import get_intersection_points
 from Simulation import SimulationMap
+from traffic_light_logic import Intersection as LogicIntersection
 
 
 def _get_local_time_str():
@@ -32,34 +43,38 @@ def _get_local_time_str():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _build_control_light_header(lane_total=16):
-    # Header cố định cho file input_control_light.txt.
-    fields = ["Frame", "Time"]
-    for i in range(lane_total):
-        fields.append(f"Lane_{i}_Cars")
-        fields.append(f"Lane_{i}_Bikes")
-    return ",".join(fields)
-
-
-def _build_control_light_row(frame_index, time_str, lane_counts, lane_total=16):
-    # Chuyển dữ liệu đếm xe sang một dòng CSV.
-    values = [str(frame_index), time_str]
+def _build_control_light_payload(lane_counts, lane_total=16, device_id="simulator"):
+    # Tao JSON dung cau truc: {timestamp, device_id, data:[{lane,cars,bikes}]}
+    timestamp = int(datetime.now().timestamp())
+    data = []
     for i in range(lane_total):
         if i < len(lane_counts):
             cars, bikes = lane_counts[i]
         else:
             cars, bikes = 0, 0
-        values.append(str(cars))
-        values.append(str(bikes))
-    return ",".join(values)
+        data.append({"lane": i, "cars": int(cars), "bikes": int(bikes)})
+
+    return {
+        "timestamp": timestamp,
+        "device_id": device_id,
+        "data": data,
+    }
 
 
-def _write_control_light_file(file_path, header, rows):
-    # Ghi đè file theo chu kỳ; giữ format dễ parse.
+def _write_control_light_json(file_path, payload):
+    # Ghi de file theo chu ky; dung JSON de he thong ngoai doc.
+    dir_path = os.path.dirname(file_path)
+    if dir_path:
+        os.makedirs(dir_path, exist_ok=True)
+
     with open(file_path, "w", encoding="utf-8") as f:
-        f.write(header + "\n")
-        for row in rows:
-            f.write(row + "\n")
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+
+    if INPUT_DEMO_LOG:
+        ts = payload.get("timestamp")
+        print(f"[input_demo] wrote {file_path} ts={ts}")
 
 
 def draw_demo_wait_stats_overlay(surface, stats, font, time_str):
@@ -148,20 +163,29 @@ def main():
     # Đối tượng điều phối toàn bộ map: danh sách giao lộ + phương tiện + bộ điều khiển.
     sim_map = SimulationMap()
 
+    # Neu chua co server, chay logic noi bo de ghi output JSON.
+    if ENABLE_LOCAL_LOGIC_SERVER:
+        logic_intersections = [LogicIntersection(x, y) for x, y in get_intersection_points()]
+        if hasattr(LogicIntersection, "set_layout_positions"):
+            LogicIntersection.set_layout_positions(
+                [(ic.cx, ic.cy) for ic in logic_intersections]
+            )
+    else:
+        logic_intersections = None
+
     # Demo: thống kê chờ đèn đỏ và in console định kỳ.
     debug_font = pygame.font.Font(None, 22)
     lane_font = pygame.font.Font(None, 16)
     stats_print_interval = 3.0
     stats_print_timer = 0.0
     last_stats = {"count": 0, "avg": 0.0, "median": 0.0, "min": 0.0, "max": 0.0}
-    frame_index = 0
 
-    # Demo: ghi file input_control_light.txt theo chu kỳ 5s.
-    control_light_path = "input_control_light.txt"
-    control_light_header = _build_control_light_header(lane_total=16)
-    control_light_rows = []
-    control_light_interval = 5.0
-    control_light_timer = 0.0
+    # Demo: ghi file input_control_light.json theo chu kỳ (neu bat).
+    if ENABLE_INPUT_DEMO:
+        control_light_path = LIGHT_INPUT_FILE
+        control_light_lane_total = LIGHT_INPUT_LANE_TOTAL
+        control_light_interval = LIGHT_INPUT_REFRESH_SEC
+        control_light_timer = 0.0
 
     running = True
     while running:
@@ -174,9 +198,15 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
-        # 1) Cập nhật trạng thái mô phỏng (xe, đèn) theo dt.
+        # 1) Neu bat logic noi bo: cap nhat pha den va ghi output JSON.
+        if logic_intersections is not None:
+            for ic in logic_intersections:
+                ic.update(dt)
+            if hasattr(LogicIntersection, "write_phase_output"):
+                LogicIntersection.write_phase_output(logic_intersections)
+
+        # 2) Cap nhat mo phong (doc output va chay xe).
         sim_map.update(dt)
-        frame_index += 1
 
         # Demo: cập nhật thống kê theo thời gian thực cho overlay.
         last_stats = sim_map.vehicle_controller.get_red_wait_stats()
@@ -197,16 +227,20 @@ def main():
                 )
             stats_print_timer = 0.0
 
-        # Demo: cập nhật file đèn đỏ mỗi 5 giây và ghi đè.
-        control_light_timer += dt
-        if control_light_timer >= control_light_interval:
-            lane_counts = sim_map.vehicle_controller.get_red_wait_lane_counts(lane_total=16)
-            row = _build_control_light_row(frame_index, now_str, lane_counts, lane_total=16)
-            control_light_rows.append(row)
-            if len(control_light_rows) > 2:
-                control_light_rows.pop(0)
-            _write_control_light_file(control_light_path, control_light_header, control_light_rows)
-            control_light_timer = 0.0
+        # Demo: cap nhat file input neu can.
+        if ENABLE_INPUT_DEMO:
+            control_light_timer += dt
+            if control_light_timer >= control_light_interval:
+                lane_counts = sim_map.vehicle_controller.get_red_wait_lane_counts(
+                    lane_total=control_light_lane_total
+                )
+                payload = _build_control_light_payload(
+                    lane_counts,
+                    lane_total=control_light_lane_total,
+                    device_id=LIGHT_INPUT_DEVICE_ID,
+                )
+                _write_control_light_json(control_light_path, payload)
+                control_light_timer = 0.0
 
         # 2) Xóa frame cũ bằng màu nền.
         screen.fill(BG_COLOR)

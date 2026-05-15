@@ -1,5 +1,7 @@
 # config.py
 
+import os
+
 # File cấu hình trung tâm cho toàn bộ mô phỏng.
 # Mọi module (đường, xe, đèn, hiển thị) đều đọc hằng số ở đây để thống nhất hành vi.
 
@@ -70,6 +72,17 @@ PCU_BIKE = 0.25
 # Hysteresis thoi gian de tranh dao pha lien tuc.
 PRESSURE_SWITCH_HOLD_SEC = 2.0
 
+# Gioi han do toi da theo truc NS/EW (giay).
+MAX_RED_TIME_SEC = 65.0
+# Nguong nhu cau toi thieu de bat dem do (don vi PCU/xe).
+RED_DEMAND_MIN = 0.5
+# Toi da so pha xanh lien tiep tren cung mot truc (NS/EW).
+MAX_CONSECUTIVE_AXIS_GREENS = 2
+# Chenh lech nhu cau (PCU/xe) de cho phep rut ngan pha xanh truoc khi chuyen truc.
+AXIS_DEMAND_SWITCH_DELTA = 6.0
+# Thoi gian giu chenh lech truoc khi ep chuyen truc (giay).
+AXIS_DEMAND_SWITCH_HOLD_SEC = 1.0
+
 # Bảng màu dùng cho đèn tín hiệu.
 GREEN_ON = (0, 255, 0)
 GREEN_OFF = (0, 60, 0)
@@ -105,15 +118,25 @@ SPAWN_DIR_MULTIPLIER = {
 	WEST: 1.6,
 }
 
-# Su dung du lieu xe cho den tu file input_control_light.txt.
+# Su dung du lieu xe cho den tu file JSON (input_control_light.json).
 USE_FILE_LIGHT_INPUT = True
-LIGHT_INPUT_FILE = "input_control_light.txt"
-LIGHT_INPUT_REFRESH_SEC = 5.0
+# Dung duong dan tuyet doi de tranh sai CWD khi chay mo phong.
+LIGHT_INPUT_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "input_control_light.json"))
+LIGHT_INPUT_DEVICE_ID = "simulator"
+LIGHT_INPUT_REFRESH_SEC = 1.0
 LIGHT_INPUT_LANE_TOTAL = 16
 
-# Ghi ket qua pha den ra file de server/IoT doc.
+# Bat/tat ghi input demo tu mo phong (khong can neu co camera AI).
+ENABLE_INPUT_DEMO = True
+# Bat/tat log khi ghi file input demo.
+INPUT_DEMO_LOG = True
+
+# Bat/tat chay logic server noi bo khi run main (khong can server rieng).
+ENABLE_LOCAL_LOGIC_SERVER = True
+
+# Ghi ket qua pha den ra file JSON de server/IoT doc.
 WRITE_PHASE_OUTPUT = True
-PHASE_OUTPUT_FILE = "output_control_light.txt"
+PHASE_OUTPUT_FILE = "output_control_light.json"
 PHASE_OUTPUT_REFRESH_SEC = 1.0
 
 # Intelligent Driver Model (IDM) parameters (longitudinal control)

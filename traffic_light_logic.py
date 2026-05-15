@@ -1,3 +1,4 @@
+import json
 import os
 import time
 
@@ -56,6 +57,52 @@ class Intersection:
             return 0
 
     @classmethod
+    def _lane_totals_from_json_payload(cls, payload, lane_total):
+        # Ho tro JSON tu thiet bi: {timestamp, device_id, data:[{lane,cars,bikes}]}
+        items = None
+
+        if isinstance(payload, dict) and isinstance(payload.get("data"), list):
+            items = payload.get("data")
+        elif isinstance(payload, list):
+            if payload and isinstance(payload[-1], dict) and isinstance(payload[-1].get("data"), list):
+                items = payload[-1].get("data")
+            elif payload and isinstance(payload[0], dict) and "lane" in payload[0]:
+                items = payload
+
+        if not isinstance(items, list):
+            return None
+
+        totals = [0] * lane_total
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            lane_id = cls._safe_int(item.get("lane"))
+            if lane_id < 0 or lane_id >= lane_total:
+                continue
+
+            cars = cls._safe_int(item.get("cars"))
+            bikes = cls._safe_int(item.get("bikes"))
+            totals[lane_id] += cars * PCU_CAR + bikes * PCU_BIKE
+
+        return totals
+
+    @classmethod
+    def _try_parse_json_lane_totals(cls, content, lane_total):
+        if not content:
+            return None
+
+        if content[0] not in "{[":
+            return None
+
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError:
+            return None
+
+        return cls._lane_totals_from_json_payload(payload, lane_total)
+
+    @classmethod
     def _read_lane_totals_from_file(cls):
         lane_total = LIGHT_INPUT_LANE_TOTAL
         path = LIGHT_INPUT_FILE
@@ -65,29 +112,31 @@ class Intersection:
 
         try:
             with open(path, "r", encoding="utf-8") as f:
-                rows = [line.strip() for line in f if line.strip()]
+                content = f.read().strip()
 
-            if len(rows) < 2:
+            if not content:
                 return [0] * lane_total
 
-            last = rows[-1].split(",")
-            expected = 2 + lane_total * 2
-            if len(last) < expected:
-                return [0] * lane_total
+            json_totals = cls._try_parse_json_lane_totals(content, lane_total)
+            if json_totals is None:
+                last_line = ""
+                for line in reversed(content.splitlines()):
+                    if line.strip():
+                        last_line = line.strip()
+                        break
 
-            values = last[2: 2 + lane_total * 2]
-            totals = []
-            for i in range(0, lane_total * 2, 2):
-                cars = cls._safe_int(values[i])
-                bikes = cls._safe_int(values[i + 1])
-                totals.append(cars * PCU_CAR + bikes * PCU_BIKE)
-            return totals
+                if last_line and last_line != content:
+                    json_totals = cls._try_parse_json_lane_totals(last_line, lane_total)
+
+            if json_totals is not None:
+                return json_totals
+            return [0] * lane_total
         except OSError:
             return [0] * lane_total
 
     @classmethod
     def write_phase_output(cls, intersections):
-        # Ghi trang thai pha den ra file de he thong ngoai doc.
+        # Ghi trang thai pha den ra file JSON de he thong ngoai doc.
         if not WRITE_PHASE_OUTPUT:
             return
 
@@ -98,28 +147,30 @@ class Intersection:
         cls._last_output_real = now
         time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now))
 
-        header = "Time,Index,CX,CY,PhaseMode,PhaseIndex,Timer,GreenElapsed,PendingNext"
-        lines = [header]
+        payload = {
+            "timestamp": int(now),
+            "time": time_str,
+            "data": [],
+        }
 
         for idx, ic in enumerate(intersections):
             pending = ic.pending_next_phase if ic.pending_next_phase else ""
-            lines.append(
-                "{t},{i},{x},{y},{mode},{phase},{timer:.2f},{elapsed:.2f},{pending}".format(
-                    t=time_str,
-                    i=idx,
-                    x=int(ic.cx),
-                    y=int(ic.cy),
-                    mode=ic.phase_mode,
-                    phase=ic.phase,
-                    timer=max(0.0, ic.timer),
-                    elapsed=ic.green_elapsed,
-                    pending=pending,
-                )
+            payload["data"].append(
+                {
+                    "index": idx,
+                    "cx": int(ic.cx),
+                    "cy": int(ic.cy),
+                    "phase_mode": ic.phase_mode,
+                    "phase_index": ic.phase,
+                    "timer": round(max(0.0, ic.timer), 2),
+                    "green_elapsed": round(ic.green_elapsed, 2),
+                    "pending_next": pending,
+                }
             )
 
         try:
             with open(PHASE_OUTPUT_FILE, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n")
+                json.dump(payload, f, ensure_ascii=False, indent=2)
         except OSError:
             return
 
@@ -172,10 +223,20 @@ class Intersection:
         # waiting_counts càng cao thì pha xanh tương ứng càng được kéo dài (trong giới hạn trần).
         self.waiting_counts = {NORTH: 0, SOUTH: 0, EAST: 0, WEST: 0}
 
+        # Dem thoi gian do theo truc NS/EW de khong cho vuot qua gioi han.
+        self.red_elapsed_by_axis = {"NS": 0.0, "EW": 0.0}
+        # Ghi nho truc xanh gan nhat va so pha xanh lien tiep.
+        self.last_green_axis = self._axis_of_mode(self.phase_mode)
+        self.axis_green_streak = 1 if self.last_green_axis else 0
+        # Hysteresis cho ep chuyen truc theo chenh lech nhu cau.
+        self.axis_demand_gap_hold = 0.0
+
         # Thời gian đỏ toàn hướng giữa các pha xanh để tách xung đột giao cắt.
         self.all_red_time = 0.8
         # Pha xanh ke tiep uu tien (neu can phuc vu re trai).
         self.pending_next_phase = None
+        # Ghi nho loai pha xanh gan nhat de luan phien cong bang.
+        self.last_phase_kind = None
         # Thoi gian cho tich luy theo tung pha (giay).
         self.wait_time_by_phase = {
             "NS_STRAIGHT": 0.0,
@@ -207,6 +268,86 @@ class Intersection:
             "EW_LEFT": ew_q * left,
         }
 
+    def _get_axis_demand(self):
+        ns_q = self.waiting_counts[NORTH] + self.waiting_counts[SOUTH]
+        ew_q = self.waiting_counts[EAST] + self.waiting_counts[WEST]
+        return {"NS": ns_q, "EW": ew_q}
+
+    @staticmethod
+    def _axis_of_mode(mode):
+        if not mode:
+            return None
+        if mode.startswith("NS_"):
+            return "NS"
+        if mode.startswith("EW_"):
+            return "EW"
+        return None
+
+    @staticmethod
+    def _other_axis(axis):
+        if axis == "NS":
+            return "EW"
+        if axis == "EW":
+            return "NS"
+        return None
+
+    def _update_red_elapsed(self, dt):
+        axis_demand = self._get_axis_demand()
+        current_axis = self._axis_of_mode(self.phase_mode)
+
+        for axis in ("NS", "EW"):
+            demand = axis_demand.get(axis, 0.0)
+            if demand <= RED_DEMAND_MIN:
+                self.red_elapsed_by_axis[axis] = 0.0
+                continue
+
+            if self.phase_mode != "ALL_RED" and current_axis == axis:
+                self.red_elapsed_by_axis[axis] = 0.0
+                continue
+
+            self.red_elapsed_by_axis[axis] += dt
+
+    def _pick_starved_axis(self):
+        if MAX_RED_TIME_SEC <= 0:
+            return None
+
+        ns_red = self.red_elapsed_by_axis.get("NS", 0.0)
+        ew_red = self.red_elapsed_by_axis.get("EW", 0.0)
+
+        if ns_red < MAX_RED_TIME_SEC and ew_red < MAX_RED_TIME_SEC:
+            return None
+        return "NS" if ns_red >= ew_red else "EW"
+
+    def _pick_axis_by_streak(self):
+        if MAX_CONSECUTIVE_AXIS_GREENS <= 0:
+            return None
+        if self.axis_green_streak < MAX_CONSECUTIVE_AXIS_GREENS:
+            return None
+        return self._other_axis(self.last_green_axis)
+
+    def _pick_axis_by_demand(self, dt):
+        if self.phase_mode == "ALL_RED":
+            self.axis_demand_gap_hold = 0.0
+            return None
+
+        axis_demand = self._get_axis_demand()
+        diff = axis_demand.get("NS", 0.0) - axis_demand.get("EW", 0.0)
+
+        if abs(diff) < AXIS_DEMAND_SWITCH_DELTA:
+            self.axis_demand_gap_hold = 0.0
+            return None
+
+        high_axis = "NS" if diff > 0 else "EW"
+        current_axis = self._axis_of_mode(self.phase_mode)
+        if current_axis == high_axis:
+            self.axis_demand_gap_hold = 0.0
+            return None
+
+        self.axis_demand_gap_hold += dt
+        if self.axis_demand_gap_hold >= AXIS_DEMAND_SWITCH_HOLD_SEC:
+            return high_axis
+        return None
+
     def _update_wait_times(self, dt):
         phase_pcu = self._get_phase_pcu()
         for mode, pcu in phase_pcu.items():
@@ -228,37 +369,61 @@ class Intersection:
             return LEFT_MIN_GREEN_TIME, LEFT_MAX_GREEN_TIME
         return MIN_GREEN_TIME, MAX_GREEN_TIME
 
-    def _axis_left_phase(self, mode):
-        if mode == "NS_STRAIGHT":
-            return "NS_LEFT"
-        if mode == "EW_STRAIGHT":
-            return "EW_LEFT"
+    @staticmethod
+    def _phase_kind(mode):
+        if mode.endswith("STRAIGHT"):
+            return "STRAIGHT"
+        if mode.endswith("LEFT"):
+            return "LEFT"
         return None
 
-    def _has_left_demand(self, mode):
-        left_mode = self._axis_left_phase(mode)
-        if not left_mode:
-            return False
-        return self._phase_pressure(left_mode) >= LEFT_DEMAND_THRESHOLD
+    def _required_next_kind(self):
+        # Cong bang: luan phien STRAIGHT <-> LEFT giua cac pha xanh.
+        if self.phase_mode != "ALL_RED":
+            current_kind = self._phase_kind(self.phase_mode)
+            if current_kind == "STRAIGHT":
+                return "LEFT"
+            if current_kind == "LEFT":
+                return "STRAIGHT"
+            return None
 
-    def _select_best_phase(self, exclude=None):
+        if self.last_phase_kind == "STRAIGHT":
+            return "LEFT"
+        if self.last_phase_kind == "LEFT":
+            return "STRAIGHT"
+        return None
+
+    def _select_best_phase(self, exclude=None, required_kind=None, axis_filter=None):
         phases = ["NS_STRAIGHT", "NS_LEFT", "EW_STRAIGHT", "EW_LEFT"]
+        if axis_filter:
+            phases = [mode for mode in phases if mode.startswith(axis_filter)]
+        if required_kind:
+            phases = [mode for mode in phases if mode.endswith(required_kind)]
+        if exclude:
+            phases = [mode for mode in phases if mode != exclude]
+
         best_mode = None
         best_pressure = -1.0
 
         for mode in phases:
-            if mode == exclude:
-                continue
             pressure = self._phase_pressure(mode)
             if pressure > best_pressure:
                 best_pressure = pressure
                 best_mode = mode
 
         if best_mode is None:
-            best_mode = "NS_STRAIGHT"
+            best_mode = phases[0] if phases else "NS_STRAIGHT"
             best_pressure = self._phase_pressure(best_mode)
 
         return best_mode, best_pressure
+
+    def _plan_next_phase_after_green(self, axis_filter=None):
+        required_kind = self._required_next_kind()
+        next_mode, _ = self._select_best_phase(
+            required_kind=required_kind,
+            axis_filter=axis_filter,
+        )
+        self.pending_next_phase = next_mode
 
     def _enter_phase(self, mode):
         phase_index_map = {
@@ -273,6 +438,15 @@ class Intersection:
         self.phase = phase_index_map.get(mode, 0)
         if mode != "ALL_RED":
             self.pending_next_phase = None
+            self.last_phase_kind = self._phase_kind(mode)
+            axis = self._axis_of_mode(mode)
+            if axis:
+                if axis == self.last_green_axis:
+                    self.axis_green_streak += 1
+                else:
+                    self.axis_green_streak = 1
+                    self.last_green_axis = axis
+            self.axis_demand_gap_hold = 0.0
         self.pressure_gap_hold = 0.0
 
         if mode == "ALL_RED":
@@ -288,6 +462,7 @@ class Intersection:
         # Neu dung du lieu file thi cap nhat waiting_counts truoc khi tinh pha.
         self._update_waiting_from_file()
         self._update_wait_times(dt)
+        self._update_red_elapsed(dt)
 
         if self.phase_mode != "ALL_RED":
             self.green_elapsed += dt
@@ -299,12 +474,26 @@ class Intersection:
         if self.timer > 0:
             return
 
+        starved_axis = self._pick_starved_axis()
+        streak_axis = self._pick_axis_by_streak()
+        required_axis = starved_axis if starved_axis else streak_axis
+
         # all_red -> chon pha xanh tiep theo (khong xung dot).
         if self.phase_mode == "ALL_RED":
+            if required_axis:
+                required_kind = self._required_next_kind()
+                next_mode, _ = self._select_best_phase(
+                    required_kind=required_kind,
+                    axis_filter=required_axis,
+                )
+                self._enter_phase(next_mode)
+                return
+
             if self.pending_next_phase:
                 self._enter_phase(self.pending_next_phase)
             else:
-                next_mode, _ = self._select_best_phase()
+                required_kind = self._required_next_kind()
+                next_mode, _ = self._select_best_phase(required_kind=required_kind)
                 self._enter_phase(next_mode)
             return
 
@@ -313,16 +502,37 @@ class Intersection:
         phase_pcu = self._get_phase_pcu()
         current_pcu = phase_pcu.get(self.phase_mode, 0.0)
         current_pressure = self._phase_pressure(self.phase_mode)
-        best_mode, best_pressure = self._select_best_phase(exclude=self.phase_mode)
+        required_kind = self._required_next_kind()
+        current_axis = self._axis_of_mode(self.phase_mode)
+        demand_axis = self._pick_axis_by_demand(dt)
+
+        early_axis = None
+        if starved_axis and current_axis != starved_axis:
+            early_axis = starved_axis
+        elif demand_axis and current_axis != demand_axis:
+            if required_axis is None or required_axis == demand_axis:
+                early_axis = demand_axis
+
+        axis_filter = required_axis or early_axis
+
+        best_mode, best_pressure = self._select_best_phase(
+            exclude=self.phase_mode,
+            required_kind=required_kind,
+            axis_filter=axis_filter,
+        )
         pressure_gap = best_pressure - current_pressure
 
         if self.green_elapsed < min_g:
             self.timer = min_g - self.green_elapsed
             return
 
+        if early_axis:
+            self._plan_next_phase_after_green(axis_filter)
+            self._enter_phase("ALL_RED")
+            return
+
         if self.green_elapsed >= max_g:
-            if self._has_left_demand(self.phase_mode):
-                self.pending_next_phase = self._axis_left_phase(self.phase_mode)
+            self._plan_next_phase_after_green(axis_filter)
             self._enter_phase("ALL_RED")
             return
 
@@ -332,8 +542,7 @@ class Intersection:
             self.pressure_gap_hold = 0.0
 
         if best_mode and self.pressure_gap_hold >= PRESSURE_SWITCH_HOLD_SEC:
-            if self._has_left_demand(self.phase_mode):
-                self.pending_next_phase = self._axis_left_phase(self.phase_mode)
+            self._plan_next_phase_after_green(axis_filter)
             self._enter_phase("ALL_RED")
             return
 
@@ -341,8 +550,7 @@ class Intersection:
             self.timer = PASSAGE_TIME
             return
 
-        if self._has_left_demand(self.phase_mode):
-            self.pending_next_phase = self._axis_left_phase(self.phase_mode)
+        self._plan_next_phase_after_green(axis_filter)
         self._enter_phase("ALL_RED")
 
     def is_allowed(self, direction, turn_intention):
