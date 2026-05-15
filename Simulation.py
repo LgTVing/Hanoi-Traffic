@@ -15,6 +15,10 @@ from road_layout import draw_roads_and_islands, get_intersection_points
 import paho.mqtt.client as mqtt
 import json
 
+BROKER = "3.107.18.217"
+PORT = 1883
+TOPIC = "traffic/lights"
+
 
 class SimulationMap:
     # File này chỉ điều phối các module: hạ tầng đường, điều khiển xe, điều khiển đèn.
@@ -45,10 +49,10 @@ class SimulationMap:
         self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.mqtt_client.on_message = self.on_mqtt_message
         try:
-            self.mqtt_client.connect("3.107.18.217", 1883)
-            self.mqtt_client.subscribe("traffic/lights")
+            self.mqtt_client.connect(BROKER, PORT)
+            self.mqtt_client.subscribe(TOPIC)
             self.mqtt_client.loop_start()
-            print("Simulator subscribed to traffic/lights")
+            print(f"Simulator subscribed to {TOPIC} on {BROKER}:{PORT}")
         except Exception as e:
             print(f"MQTT connect error in Simulator: {e}")
 
