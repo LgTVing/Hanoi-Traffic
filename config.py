@@ -56,6 +56,20 @@ MAX_GREEN_TIME = 35.0
 # YELLOW_TIME hiện chưa dùng trong controller hiện tại (chu kỳ đang dùng ALL_RED xen kẽ).
 YELLOW_TIME = 3.0
 
+# Tham so toi thieu/toi da va thoi gian gia han cho thuat toan toi uu.
+MIN_GREEN_TIME = BASE_GREEN_TIME
+LEFT_MIN_GREEN_TIME = max(2.0, BASE_GREEN_TIME * 0.6)
+LEFT_MAX_GREEN_TIME = MAX_GREEN_TIME * 0.8
+PASSAGE_TIME = 2.0
+PRESSURE_SWITCH_DELTA = 2.0
+LEFT_DEMAND_THRESHOLD = 1.0
+
+# PCU weights cho tinh toan ap luc.
+PCU_CAR = 1.0
+PCU_BIKE = 0.25
+# Hysteresis thoi gian de tranh dao pha lien tuc.
+PRESSURE_SWITCH_HOLD_SEC = 2.0
+
 # Bảng màu dùng cho đèn tín hiệu.
 GREEN_ON = (0, 255, 0)
 GREEN_OFF = (0, 60, 0)
@@ -75,6 +89,32 @@ KERB_COLOR = (200, 200, 200)
 # Nhãn hướng chuyển động thống nhất toàn hệ thống.
 # Dùng chuỗi thay vì số để log/debug dễ đọc.
 NORTH, SOUTH, EAST, WEST = "NORTH", "SOUTH", "EAST", "WEST"
+
+# Tỷ lệ chọn hướng rẽ thống nhất cho toàn hệ thống.
+TURN_INTENTION_OPTIONS = ["STRAIGHT", "LEFT", "RIGHT"]
+TURN_INTENTION_WEIGHTS = [0.45, 0.30, 0.25]
+
+# Xác suất spawn cơ sở theo frame cho mỗi trục đường.
+# Hệ số theo hướng sẽ nhân lên để tạo chênh lệch mật độ xe.
+SPAWN_BASE_PROB = 0.035
+# E/W đông hơn N/S: ví dụ 1.6x cho EAST/WEST, 1.0x cho NORTH/SOUTH.
+SPAWN_DIR_MULTIPLIER = {
+	NORTH: 1.0,
+	SOUTH: 1.0,
+	EAST: 1.6,
+	WEST: 1.6,
+}
+
+# Su dung du lieu xe cho den tu file input_control_light.txt.
+USE_FILE_LIGHT_INPUT = True
+LIGHT_INPUT_FILE = "input_control_light.txt"
+LIGHT_INPUT_REFRESH_SEC = 5.0
+LIGHT_INPUT_LANE_TOTAL = 16
+
+# Ghi ket qua pha den ra file de server/IoT doc.
+WRITE_PHASE_OUTPUT = True
+PHASE_OUTPUT_FILE = "output_control_light.txt"
+PHASE_OUTPUT_REFRESH_SEC = 1.0
 
 # Intelligent Driver Model (IDM) parameters (longitudinal control)
 # Units: distances in pixels, time in seconds, speed in pixels/sec

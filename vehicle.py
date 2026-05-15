@@ -38,10 +38,16 @@ class Vehicle:
         self.is_waiting = False;
         self.is_stopping_for_light = False
 
+        # Thời điểm bắt đầu dừng đèn đỏ (giây mô phỏng).
+        # None nghĩa là xe hiện không trong trạng thái chờ đèn đỏ.
+        self.red_wait_start_time = None
+        # Thời gian chờ đèn đỏ gần nhất để debug nhanh nếu cần.
+        self.red_wait_last = None
+
         # Ý định rẽ ban đầu của xe.
         # Lưu ý: controller có thể gán lại ý định khi xe tiến gần giao lộ kế tiếp.
-        # Tỷ lệ tại lớp cơ sở: 40% thẳng, 30% trái, 30% phải.
-        self.turn_intention = random.choices(["STRAIGHT", "LEFT", "RIGHT"], weights=[0.4, 0.3, 0.3])[0]
+        # Tỷ lệ lấy từ config để đồng bộ giữa các module.
+        self.turn_intention = random.choices(TURN_INTENTION_OPTIONS, weights=TURN_INTENTION_WEIGHTS)[0]
 
         # Cờ trạng thái cua.
         self.has_turned = False

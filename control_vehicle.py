@@ -31,6 +31,40 @@ class VehicleController:
         self.intersections = intersections
         # vehicles: danh sách phương tiện dùng chung với lớp SimulationMap.
         self.vehicles = vehicles
+        # Đồng hồ mô phỏng (giây) dùng để đo thời gian chờ đèn đỏ.
+        self.sim_time = 0.0
+        # Mẫu thời gian chờ đèn đỏ đã ghi nhận (giây).
+        self.red_wait_samples = []
+        # Bản đồ chỉ số làn theo hướng (mỗi giao lộ có 4 đèn).
+        self.lane_dir_index = {NORTH: 0, SOUTH: 1, EAST: 2, WEST: 3}
+        # Chỉ số giao lộ theo thứ tự trong danh sách để quy về Lane_0..Lane_15.
+        self.intersection_index = {(ic.cx, ic.cy): i for i, ic in enumerate(self.intersections)}
+        # Map lane theo mô tả 0..15 (NW/NE/SW/SE + hướng vào nút).
+        self.lane_map_by_ic_dir = self._build_lane_map()
+
+    def _build_lane_map(self):
+        # Xây map số lane theo vị trí nút giao và hướng xe tiến vào.
+        xs = sorted({ic.cx for ic in self.intersections})
+        ys = sorted({ic.cy for ic in self.intersections})
+
+        if len(xs) < 2 or len(ys) < 2:
+            return {}
+
+        # y nhỏ hơn là phía Bắc (trên màn hình), x nhỏ hơn là phía Tây.
+        quad_map = {
+            (0, 0): {EAST: 0, WEST: 3, SOUTH: 10, NORTH: 9},
+            (1, 0): {EAST: 1, WEST: 2, SOUTH: 14, NORTH: 13},
+            (0, 1): {EAST: 4, WEST: 7, SOUTH: 11, NORTH: 8},
+            (1, 1): {EAST: 5, WEST: 6, SOUTH: 15, NORTH: 12},
+        }
+
+        lane_map = {}
+        for ic in self.intersections:
+            x_rank = xs.index(ic.cx)
+            y_rank = ys.index(ic.cy)
+            lane_map[(ic.cx, ic.cy)] = quad_map.get((x_rank, y_rank), {})
+
+        return lane_map
 
     def _lane_span(self):
         # Khoảng cách chuẩn giữa 2 tâm làn liên tiếp.
@@ -83,13 +117,17 @@ class VehicleController:
         return max(lo, min(hi, sampled))
 
     def update(self, dt):
+        # Cập nhật thời gian mô phỏng để đo thống kê.
+        self.sim_time += dt
+
         # Bước 1: thử sinh xe mới trước khi tính tương tác.
         self._spawn_vehicles()
 
         # Bước 2: reset bộ đếm xe chờ của tất cả giao lộ cho frame hiện tại.
         # Vòng for đảm bảo mỗi giao lộ luôn tính queue mới, không giữ dữ liệu frame cũ.
-        for ic in self.intersections:
-            ic.waiting_counts = {NORTH: 0, SOUTH: 0, EAST: 0, WEST: 0}
+        if not USE_FILE_LIGHT_INPUT:
+            for ic in self.intersections:
+                ic.waiting_counts = {NORTH: 0, SOUTH: 0, EAST: 0, WEST: 0}
 
         # Reset ý định cho xe vừa hoàn tất cua để quay về trạng thái đi thẳng.
         for v in self.vehicles:
@@ -160,7 +198,7 @@ class VehicleController:
 
                     # if: chỉ ra quyết định trong vùng chuẩn bị vào nút (tránh đổi ý quá sớm/quá muộn).
                     if 0 < dist_to_center < 260:
-                        v.turn_intention = random.choices(["STRAIGHT", "LEFT", "RIGHT"], weights=[0.45, 0.30, 0.25])[0]
+                        v.turn_intention = random.choices(TURN_INTENTION_OPTIONS, weights=TURN_INTENTION_WEIGHTS)[0]
                         v.target_offset = self._sample_lane_offset(v, v.turn_intention, preferred_offset=v.offset)
                         v.decision_made = True
 
@@ -172,16 +210,20 @@ class VehicleController:
 
                 # Tính khoảng dừng vì đèn đỏ (trừ rẽ phải được đi).
                 dist_to_stop_line = 9999
+                allowed_now = True
                 if target_ic and v.turn_intention != "RIGHT":
+                    allowed_now = target_ic.is_allowed(v.direction, v.turn_intention)
                     d_stop = self._get_dist_to_stop(v, target_ic)
 
                     # if: xe đang trước vạch dừng và luồng không được phép qua.
-                    if d_stop > 0 and not target_ic.is_allowed(v.direction, v.turn_intention):
+                    if d_stop > 0 and not allowed_now:
                         dist_to_stop_line = d_stop - (v.length / 2)
 
                         # if: đủ gần vạch dừng thì đánh dấu trạng thái đang dừng đèn.
                         if dist_to_stop_line < 100:
                             v.is_stopping_for_light = True
+                            if v.red_wait_start_time is None:
+                                v.red_wait_start_time = self.sim_time
 
                 # Tìm xe phía trước trong lane hiện tại theo trục chuyển động.
                 closest_ahead = None
@@ -235,14 +277,87 @@ class VehicleController:
                     v.current_speed = max_allowed_dist / dt
                     v.is_waiting = True
 
+                # Nếu đã qua pha xanh và xe bắt đầu chạy lại -> chốt thời gian chờ đèn đỏ.
+                if v.red_wait_start_time is not None and allowed_now and v.current_speed > 0:
+                    wait_time = self.sim_time - v.red_wait_start_time
+                    self.red_wait_samples.append(wait_time)
+                    v.red_wait_last = wait_time
+                    v.red_wait_start_time = None
+
                 # if: ghi nhận xe chờ để bộ đèn dùng cho pha kế tiếp.
-                if v.is_waiting and target_ic and v.turn_intention != "RIGHT":
-                    target_ic.waiting_counts[v.direction] += 1
+                if not USE_FILE_LIGHT_INPUT:
+                    if v.is_waiting and target_ic and v.turn_intention != "RIGHT":
+                        target_ic.waiting_counts[v.direction] += 1
 
                 v.update_position(dt)
 
         # Dọn xe theo biên hạ tầng hiện tại (không phụ thuộc cứng vào WINDOW_SIZE).
         self.vehicles[:] = [v for v in self.vehicles if is_inside_cleanup_bounds(v.x, v.y)]
+
+    def get_red_wait_stats(self):
+        # Trả thống kê thời gian chờ đèn đỏ theo giây mô phỏng.
+        samples = self.red_wait_samples
+        if not samples:
+            return {"count": 0, "avg": 0.0, "median": 0.0, "min": 0.0, "max": 0.0}
+
+        ordered = sorted(samples)
+        count = len(ordered)
+        total = sum(ordered)
+        mid = count // 2
+
+        if count % 2 == 1:
+            median = ordered[mid]
+        else:
+            median = (ordered[mid - 1] + ordered[mid]) / 2.0
+
+        return {
+            "count": count,
+            "avg": total / count,
+            "median": median,
+            "min": ordered[0],
+            "max": ordered[-1],
+        }
+
+    def get_lane_number_for_intersection(self, ic, direction):
+        # Trả về số lane theo mapping mô tả 0..15.
+        key = (ic.cx, ic.cy)
+        mapping = self.lane_map_by_ic_dir.get(key)
+        if mapping and direction in mapping:
+            return mapping[direction]
+
+        # Fallback giữ hành vi cũ nếu map không khớp.
+        base = self.intersection_index.get(key)
+        dir_idx = self.lane_dir_index.get(direction)
+        if base is None or dir_idx is None:
+            return None
+
+        return base * 4 + dir_idx
+
+    def get_red_wait_lane_counts(self, lane_total=16):
+        # Đếm xe đang dừng đèn đỏ theo 16 hướng đèn (N,S,E,W cho mỗi giao lộ).
+        counts = [[0, 0] for _ in range(lane_total)]
+
+        for v in self.vehicles:
+            if v.is_turning or v.turn_intention == "RIGHT":
+                continue
+
+            target_ic = self._get_next_intersection(v)
+            if not target_ic:
+                continue
+
+            if not target_ic.is_allowed(v.direction, v.turn_intention):
+                d_stop = self._get_dist_to_stop(v, target_ic)
+                if d_stop > 0 and v.is_waiting and v.current_speed <= 0.01:
+                    lane_idx = self.get_lane_number_for_intersection(target_ic, v.direction)
+                    if lane_idx is None or lane_idx >= lane_total:
+                        continue
+
+                    if isinstance(v, Car):
+                        counts[lane_idx][0] += 1
+                    elif isinstance(v, Motorcycle):
+                        counts[lane_idx][1] += 1
+
+        return counts
 
     def _spawn_vehicles(self):
         # Giới hạn tổng số xe để giữ hiệu năng ổn định.
@@ -252,12 +367,14 @@ class VehicleController:
                 # Vòng for 2: duyệt từng trục đường của hướng đó.
                 for pos in get_axis_positions_for_direction(d):
                     # if: xác suất spawn theo frame, điều chỉnh mật độ xe vào hệ thống.
-                    if random.random() < 0.035:
+                    spawn_prob = SPAWN_BASE_PROB * SPAWN_DIR_MULTIPLIER.get(d, 1.0)
+                    spawn_prob = min(0.95, max(0.0, spawn_prob))
+                    if random.random() < spawn_prob:
                         # Sinh phần lớn là xe máy, phần còn lại là ô tô.
                         new_v = Motorcycle(d, pos) if random.random() <= 0.85 else Car(d, pos)
 
                         # Gán trước ý định và lane mục tiêu để tránh đổi lane quá đột ngột ngay sau spawn.
-                        new_v.turn_intention = random.choices(["STRAIGHT", "LEFT", "RIGHT"], weights=[0.45, 0.30, 0.25])[0]
+                        new_v.turn_intention = random.choices(TURN_INTENTION_OPTIONS, weights=TURN_INTENTION_WEIGHTS)[0]
                         new_v.target_offset = self._sample_lane_offset(new_v, new_v.turn_intention)
                         new_v.offset = new_v.target_offset
                         new_v.decision_made = True

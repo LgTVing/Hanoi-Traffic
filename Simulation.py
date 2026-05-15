@@ -20,6 +20,8 @@ class SimulationMap:
         # Duyệt toàn bộ cặp tọa độ (x, y) do road_layout sinh ra để tạo nút giao tương ứng.
         # Vòng for trong list comprehension đảm bảo mỗi giao điểm đều có một Intersection độc lập.
         self.intersections = [Intersection(x, y) for x, y in get_intersection_points()]
+        if hasattr(Intersection, "set_layout_positions"):
+            Intersection.set_layout_positions([(ic.cx, ic.cy) for ic in self.intersections])
 
         # Danh sách phương tiện dùng chung cho cả controller và bước vẽ.
         self.vehicles = []
@@ -45,6 +47,10 @@ class SimulationMap:
         # Vòng for này giúp mỗi nút giao tự tiến hóa độc lập theo mật độ chờ cục bộ của chính nó.
         for ic in self.intersections:
             ic.update(dt)
+
+        # Ghi trang thai pha den ra file de he thong ngoai doc.
+        if hasattr(Intersection, "write_phase_output"):
+            Intersection.write_phase_output(self.intersections)
 
     def _draw_aruco_markers(self, surface):
         # Vẽ 4 ArUco markers để nhận diện và canh lề 4 góc.
