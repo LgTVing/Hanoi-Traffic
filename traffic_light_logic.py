@@ -26,25 +26,43 @@ class Intersection:
         # Ánh xạ ngược từ lane_id sang hướng (direction)
         self.lane_to_dir = {v: k for k, v in self.lane_mapping.items()}
 
-        # Trạng thái đèn của mỗi hướng (mặc định tất cả đều đỏ)
+        # Trạng thái đèn của mỗi hướng (mặc định tất cả đều đỏ 20s)
         self.lights = {
             direction: {
-                "straight": {"state": "red", "timer": 0},
-                "left": {"state": "red", "timer": 0}
+                "straight": {"state": "red", "timer": 20.0},
+                "left": {"state": "red", "timer": 20.0}
             } for direction in [NORTH, EAST, SOUTH, WEST]
         }
+
+        # Khởi tạo đèn theo kịch bản: 2 hướng xanh, 2 hướng đỏ
+        if intersection_id in [0, 3]:
+            # Ngã tư 0, 3: Bắc Nam xanh, Đông Tây đỏ
+            for d in [NORTH, SOUTH]:
+                self.lights[d]["straight"]["state"] = "green"
+                self.lights[d]["left"]["state"] = "green"
+        elif intersection_id in [1, 2]:
+            # Ngã tư 1, 2: Đông Tây xanh, Bắc Nam đỏ
+            for d in [EAST, WEST]:
+                self.lights[d]["straight"]["state"] = "green"
+                self.lights[d]["left"]["state"] = "green"
 
         # Số xe chờ theo hướng (cập nhật từ VehicleController mỗi frame).
         self.waiting_counts = {NORTH: 0, SOUTH: 0, EAST: 0, WEST: 0}
 
     def update(self, dt):
-        # Trừ timer đếm ngược, hiện tại chỉ để hiển thị hoặc xử lý sau này
+        # Trừ timer đếm ngược
         for d in self.lights:
             for action in ["straight", "left"]:
                 if self.lights[d][action]["timer"] > 0:
                     self.lights[d][action]["timer"] -= dt
-                    if self.lights[d][action]["timer"] < 0:
-                        self.lights[d][action]["timer"] = 0
+                
+                # Hết thời gian mà chưa có lệnh mới: hoạt động như đèn bình thường (luân phiên 20s)
+                if self.lights[d][action]["timer"] <= 0:
+                    if self.lights[d][action]["state"] in ["green", "yellow"]:
+                        self.lights[d][action]["state"] = "red"
+                    else:
+                        self.lights[d][action]["state"] = "green"
+                    self.lights[d][action]["timer"] = 20.0
 
     def apply_command(self, lanes_data):
         # Cập nhật trạng thái đèn từ MQTT payload
