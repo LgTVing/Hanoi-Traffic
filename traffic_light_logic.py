@@ -3,74 +3,61 @@ from config import *
 
 class Intersection:
     """
-    Pha đèn 8 bước không cắt luồng:
-      0: NS_STRAIGHT  | 1: ALL_RED
-      2: NS_LEFT      | 3: ALL_RED
-      4: EW_STRAIGHT  | 5: ALL_RED
-      6: EW_LEFT      | 7: ALL_RED
+    Quản lý trạng thái đèn giao thông theo lane được điều khiển từ MQTT.
     """
 
-    def __init__(self, cx, cy):
-        # Tâm hình học của nút giao, dùng làm gốc tính vị trí đèn và vùng dừng xe.
+    def __init__(self, cx, cy, intersection_id=0):
+        # Tâm hình học của nút giao.
         self.cx = cx
         self.cy = cy
+        self.intersection_id = intersection_id
 
-        # phase: chỉ số bước trong chu kỳ 0..7.
-        # phase_mode: nhãn dễ đọc để module xe kiểm tra quyền đi.
-        self.phase = 0
-        self.phase_mode = "NS_STRAIGHT"
+        # Khởi tạo lane mapping theo protocol
+        self.lane_mapping = {}
+        if intersection_id == 0:
+            self.lane_mapping = {NORTH: 10, EAST: 3, SOUTH: 9, WEST: 0}
+        elif intersection_id == 1:
+            self.lane_mapping = {NORTH: 14, EAST: 2, SOUTH: 13, WEST: 1}
+        elif intersection_id == 2:
+            self.lane_mapping = {NORTH: 11, EAST: 7, SOUTH: 8, WEST: 4}
+        elif intersection_id == 3:
+            self.lane_mapping = {NORTH: 15, EAST: 6, SOUTH: 12, WEST: 5}
 
-        # timer đếm ngược theo giây; khi chạm 0 sẽ chuyển pha.
-        self.timer = BASE_GREEN_TIME
+        # Ánh xạ ngược từ lane_id sang hướng (direction)
+        self.lane_to_dir = {v: k for k, v in self.lane_mapping.items()}
+
+        # Trạng thái đèn của mỗi hướng (mặc định tất cả đều đỏ)
+        self.lights = {
+            direction: {
+                "straight": {"state": "red", "timer": 0},
+                "left": {"state": "red", "timer": 0}
+            } for direction in [NORTH, EAST, SOUTH, WEST]
+        }
 
         # Số xe chờ theo hướng (cập nhật từ VehicleController mỗi frame).
-        # waiting_counts càng cao thì pha xanh tương ứng càng được kéo dài (trong giới hạn trần).
         self.waiting_counts = {NORTH: 0, SOUTH: 0, EAST: 0, WEST: 0}
 
-        # Thời gian đỏ toàn hướng giữa các pha xanh để tách xung đột giao cắt.
-        self.all_red_time = 0.8
-
     def update(self, dt):
-        # Bước 1: đếm lùi theo thời gian frame hiện tại.
-        self.timer -= dt
+        # Trừ timer đếm ngược, hiện tại chỉ để hiển thị hoặc xử lý sau này
+        for d in self.lights:
+            for action in ["straight", "left"]:
+                if self.lights[d][action]["timer"] > 0:
+                    self.lights[d][action]["timer"] -= dt
+                    if self.lights[d][action]["timer"] < 0:
+                        self.lights[d][action]["timer"] = 0
 
-        # if: nếu timer vẫn dương thì chưa đến lúc chuyển pha.
-        if self.timer > 0:
-            return
-
-        # Bước 2: timer đã hết -> nhảy sang pha kế tiếp theo vòng tròn 0..7.
-        self.phase = (self.phase + 1) % 8
-
-        # if/elif theo phase để gán mode và thời lượng pha mới.
-        # Pha thẳng dùng hệ số cộng theo hàng chờ lớn hơn pha rẽ trái.
-        if self.phase == 0:
-            self.phase_mode = "NS_STRAIGHT"
-            ns_q = self.waiting_counts[NORTH] + self.waiting_counts[SOUTH]
-            self.timer = min(MAX_GREEN_TIME, BASE_GREEN_TIME + ns_q * 0.8)
-        elif self.phase == 1:
-            self.phase_mode = "ALL_RED"
-            self.timer = self.all_red_time
-        elif self.phase == 2:
-            self.phase_mode = "NS_LEFT"
-            ns_q = self.waiting_counts[NORTH] + self.waiting_counts[SOUTH]
-            self.timer = min(MAX_GREEN_TIME * 0.8, max(2.0, BASE_GREEN_TIME * 0.6 + ns_q * 0.5))
-        elif self.phase == 3:
-            self.phase_mode = "ALL_RED"
-            self.timer = self.all_red_time
-        elif self.phase == 4:
-            self.phase_mode = "EW_STRAIGHT"
-            ew_q = self.waiting_counts[EAST] + self.waiting_counts[WEST]
-            self.timer = min(MAX_GREEN_TIME, BASE_GREEN_TIME + ew_q * 0.8)
-        elif self.phase == 5:
-            self.phase_mode = "ALL_RED"
-            self.timer = self.all_red_time
-        elif self.phase == 6:
-            self.phase_mode = "EW_LEFT"
-            ew_q = self.waiting_counts[EAST] + self.waiting_counts[WEST]
-            self.timer = min(MAX_GREEN_TIME * 0.8, max(2.0, BASE_GREEN_TIME * 0.6 + ew_q * 0.5))
-        elif self.phase == 7:
-            self.phase_mode = "ALL_RED"
-            self.timer = self.all_red_time
+    def apply_command(self, lanes_data):
+        # Cập nhật trạng thái đèn từ MQTT payload
+        for lane_cmd in lanes_data:
+            lane_id = lane_cmd.get("lane_id")
+            if lane_id in self.lane_to_dir:
+                d = self.lane_to_dir[lane_id]
+                if "straight" in lane_cmd:
+                    self.lights[d]["straight"]["state"] = lane_cmd["straight"].get("state", "red")
+                    self.lights[d]["straight"]["timer"] = lane_cmd["straight"].get("duration", 0)
+                if "left" in lane_cmd:
+                    self.lights[d]["left"]["state"] = lane_cmd["left"].get("state", "red")
+                    self.lights[d]["left"]["timer"] = lane_cmd["left"].get("duration", 0)
 
     def is_allowed(self, direction, turn_intention):
         # Quy tắc đặc biệt: rẽ phải luôn được phép (mô phỏng luồng tách riêng/slip lane).
@@ -81,45 +68,18 @@ class Intersection:
         if turn_intention not in ["STRAIGHT", "LEFT", "RIGHT"]:
             turn_intention = "STRAIGHT"
 
-        # Nếu ALL_RED thì khóa toàn bộ luồng (trừ rẽ phải đã return phía trên).
-        if self.phase_mode == "ALL_RED":
-            return False
-
-        # Phân loại hướng theo trục dọc/ngang để so với pha hiện tại.
-        ns = direction in [NORTH, SOUTH]
-        ew = direction in [EAST, WEST]
-
-        # Các nhánh if dưới đây ánh xạ trực tiếp: "mode nào -> kiểu xe nào được đi".
-        if self.phase_mode == "NS_STRAIGHT":
-            return ns and turn_intention == "STRAIGHT"
-        if self.phase_mode == "NS_LEFT":
-            return ns and turn_intention == "LEFT"
-        if self.phase_mode == "EW_STRAIGHT":
-            return ew and turn_intention == "STRAIGHT"
-        if self.phase_mode == "EW_LEFT":
-            return ew and turn_intention == "LEFT"
-        return False
+        # Check trạng thái đèn theo direction và action
+        action = "left" if turn_intention == "LEFT" else "straight"
+        
+        # Chỉ đi khi đèn xanh
+        return self.lights[direction][action]["state"] == "green"
 
     def get_display_mode_for_direction(self, direction):
-        # Hàm này chỉ phục vụ hiển thị icon đèn (không quyết định vật lý xe).
-        if self.phase_mode == "ALL_RED":
-            return "RED"
-
-        # if: cột đèn hướng Bắc/Nam.
-        if direction in [NORTH, SOUTH]:
-            if self.phase_mode == "NS_STRAIGHT":
-                return "STRAIGHT"
-            if self.phase_mode == "NS_LEFT":
-                return "LEFT"
-            return "RED"
-
-        # if: cột đèn hướng Đông/Tây.
-        if direction in [EAST, WEST]:
-            if self.phase_mode == "EW_STRAIGHT":
-                return "STRAIGHT"
-            if self.phase_mode == "EW_LEFT":
-                return "LEFT"
-            return "RED"
-
-        # Fallback cho direction không hợp lệ.
-        return "RED"
+        # Trả về dict trạng thái đèn để renderer vẽ
+        if direction not in self.lights:
+            return {"straight": "red", "left": "red"}
+        
+        return {
+            "straight": self.lights[direction]["straight"]["state"],
+            "left": self.lights[direction]["left"]["state"]
+        }

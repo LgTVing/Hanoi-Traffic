@@ -12,6 +12,8 @@ from traffic_light_logic import Intersection
 from traffic_light_renderer import draw_traffic_signals
 from control_vehicle import VehicleController
 from road_layout import draw_roads_and_islands, get_intersection_points
+import paho.mqtt.client as mqtt
+import json
 
 
 class SimulationMap:
@@ -19,7 +21,9 @@ class SimulationMap:
     def __init__(self):
         # Duyệt toàn bộ cặp tọa độ (x, y) do road_layout sinh ra để tạo nút giao tương ứng.
         # Vòng for trong list comprehension đảm bảo mỗi giao điểm đều có một Intersection độc lập.
-        self.intersections = [Intersection(x, y) for x, y in get_intersection_points()]
+        self.intersections = []
+        for i, (x, y) in enumerate(get_intersection_points()):
+            self.intersections.append(Intersection(x, y, i))
 
         # Danh sách phương tiện dùng chung cho cả controller và bước vẽ.
         self.vehicles = []
@@ -36,6 +40,27 @@ class SimulationMap:
             except Exception as e:
                 print(f"Lỗi load marker {path}: {e}")
                 self.markers.append(None)
+
+        # Thiết lập MQTT để nhận tín hiệu điều khiển đèn
+        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        self.mqtt_client.on_message = self.on_mqtt_message
+        try:
+            self.mqtt_client.connect("3.107.18.217", 1883)
+            self.mqtt_client.subscribe("traffic/lights")
+            self.mqtt_client.loop_start()
+            print("Simulator subscribed to traffic/lights")
+        except Exception as e:
+            print(f"MQTT connect error in Simulator: {e}")
+
+    def on_mqtt_message(self, client, userdata, msg):
+        try:
+            payload = json.loads(msg.payload.decode())
+            for ic_data in payload.get("intersections", []):
+                ic_id = ic_data.get("intersection_id")
+                if ic_id is not None and 0 <= ic_id < len(self.intersections):
+                    self.intersections[ic_id].apply_command(ic_data.get("lanes", []))
+        except Exception as e:
+            print(f"MQTT msg process error: {e}")
 
     def update(self, dt):
         # 1) Cập nhật xe trước để thu thập waiting_counts mới cho mỗi giao lộ.

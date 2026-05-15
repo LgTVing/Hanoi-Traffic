@@ -42,13 +42,19 @@ def draw_traffic_signals(surface, intersections):
         _draw_rotated_housing(x, y, bw, bh, angle_rad)
 
         # Mỗi cụm luôn có 3 đèn; màu từng đèn phản ánh quyền đi hiện tại của hướng đó.
-        red_on = mode == "RED"
-        straight_on = mode == "STRAIGHT"
-        left_on = mode == "LEFT"
+        left_state = mode.get("left", "red")
+        straight_state = mode.get("straight", "red")
+        
+        def get_color(state):
+            if state == "green": return GREEN_ON
+            if state == "yellow": return YELLOW_ON
+            return RED_ON
+            
+        red_on = (left_state == "red" and straight_state == "red")
 
         # Bóng 1 (bên trái cụm): mũi tên rẽ trái kiểu <-.
         lx, ly = x - 16, y
-        left_col = GREEN_ON if left_on else RED_ON
+        left_col = get_color(left_state)
         left_poly = [
             (lx + 6, ly - 2),
             (lx - 1, ly - 2),
@@ -63,7 +69,7 @@ def draw_traffic_signals(surface, intersections):
         # Đèn mũi tên đi thẳng: xanh khi được đi thẳng, ngược lại hiển thị đỏ.
         # Bóng 2 (giữa cụm): mũi tên đi thẳng.
         sx, sy = x, y
-        straight_col = GREEN_ON if straight_on else RED_ON
+        straight_col = get_color(straight_state)
         shaft = [
             (sx - 2, sy + 5),
             (sx + 2, sy + 5),
