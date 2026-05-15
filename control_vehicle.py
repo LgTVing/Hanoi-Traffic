@@ -11,6 +11,7 @@ Chịu trách nhiệm cho mỗi frame:
 import random
 
 from config import *
+from spawn_config import SPAWN_RATES
 from motor import Motorcycle
 from car_vehicle import Car
 from road_layout import (
@@ -252,7 +253,8 @@ class VehicleController:
                 # Vòng for 2: duyệt từng trục đường của hướng đó.
                 for pos in get_axis_positions_for_direction(d):
                     # if: xác suất spawn theo frame, điều chỉnh mật độ xe vào hệ thống.
-                    if random.random() < 0.035:
+                    spawn_multiplier = SPAWN_RATES.get(d, 1.0)
+                    if random.random() < 0.035 * spawn_multiplier:
                         # Sinh phần lớn là xe máy, phần còn lại là ô tô.
                         new_v = Motorcycle(d, pos) if random.random() <= 0.85 else Car(d, pos)
 

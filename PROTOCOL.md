@@ -154,8 +154,11 @@ Lệnh có hiệu lực **ngay khi Simulator nhận được**.
 
 ### Khi khởi tạo/Sau khi đèn chuyển màu/Không có tín hiệu điều khiển
 
-
----
+- **Khi khởi tạo**: Các ngã tư sẽ khởi tạo mô phỏng một hệ thống đèn bình thường (2 hướng xanh, 2 hướng đỏ) với thời gian đếm ngược mặc định là **20 giây**. Cụ thể:
+  - Ngã tư 0 và 3: Làn Nam, Bắc có đèn `green` (xanh - cả đi thẳng và rẽ trái); Làn Đông, Tây có đèn `red` (đỏ).
+  - Ngã tư 1 và 2: Làn Đông, Tây có đèn `green` (xanh); Làn Nam, Bắc có đèn `red` (đỏ).
+- **Hết thời gian đếm ngược (Không có tín hiệu điều khiển mới)**: Nếu thời gian (`duration`) đếm ngược về 0 mà Simulator chưa nhận được lệnh điều khiển mới từ Server, hệ thống sẽ tự động luân phiên trạng thái (giống hệ thống đèn cố định): Đèn đang `red` (đỏ) sẽ tự động chuyển sang `green` (xanh) với thời gian 20 giây; Đèn đang `green` hoặc `yellow` sẽ tự động chuyển sang `red` (đỏ) với thời gian 20 giây. Điều này đảm bảo giao thông vẫn hoạt động bình thường kể cả khi mất kết nối.
+- **Lưu ý**: Simulator đóng vai trò lắng nghe. Server phải gửi lệnh mới trước khi đèn xanh/vàng hiện tại đếm ngược về 0 nếu không muốn bị ngắt quãng luồng giao thông.
 
 ## 5. Cấu Hình Kết Nối
 
