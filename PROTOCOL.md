@@ -169,7 +169,7 @@ PORT=1883
 ```
 
 ## 6. Pipeline
-Tôi dùng camera pi5 để quay màn hình giả lập. pi5 gửi số lượng xe mỗi làn lên server. Server có thuật toán chạy và gửi json điều khiển đèn. Sau đó giả lập lắng nghe tín hiệu điều khiển để điều chỉnh đèn đỏ
+Đây là code giả lập giao thông, khi chạy phần mềm này, màn hình hiện lên giả lập 4 ngã tư. Tôi dùng camera pi5 để quay màn hình giả lập. pi5 gửi số lượng xe mỗi làn lên server. Server có thuật toán chạy và gửi json điều khiển đèn. Sau đó giả lập lắng nghe tín hiệu điều khiển để điều chỉnh đèn đỏ
 
 <!-- ## 6. Thứ Tự Khởi Động
 

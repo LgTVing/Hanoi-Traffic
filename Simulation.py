@@ -7,6 +7,7 @@ mà chỉ gọi đúng thứ tự giữa các module chuyên trách.
 
 import pygame
 import os
+import time
 
 from traffic_light_logic import Intersection
 from traffic_light_renderer import draw_traffic_signals
@@ -18,6 +19,7 @@ import json
 BROKER = "3.107.18.217"
 PORT = 1883
 TOPIC = "traffic/lights"
+TELEMETRY_TOPIC = "traffic/telemetry"
 
 
 class SimulationMap:
@@ -48,6 +50,7 @@ class SimulationMap:
         # Thiết lập MQTT để nhận tín hiệu điều khiển đèn
         self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.mqtt_client.on_message = self.on_mqtt_message
+        self.last_telemetry_time = time.time()
         try:
             self.mqtt_client.connect(BROKER, PORT)
             self.mqtt_client.subscribe(TOPIC)
@@ -74,6 +77,40 @@ class SimulationMap:
         # Vòng for này giúp mỗi nút giao tự tiến hóa độc lập theo mật độ chờ cục bộ của chính nó.
         for ic in self.intersections:
             ic.update(dt)
+
+        # 3) Gửi telemetry mỗi 0.5s
+        current_time = time.time()
+        if current_time - self.last_telemetry_time >= 0.5:
+            self.last_telemetry_time = current_time
+            self.send_telemetry()
+
+    def send_telemetry(self):
+        # Khởi tạo đếm cho 16 lanes
+        lanes_data = {i: {"cars": 0, "bikes": 0} for i in range(16)}
+        
+        for v in self.vehicles:
+            target_ic = self.vehicle_controller._get_next_intersection(v)
+            if target_ic is not None:
+                lane_id = target_ic.lane_mapping.get(v.direction)
+                if lane_id is not None:
+                    if type(v).__name__ == "Motorcycle":
+                        lanes_data[lane_id]["bikes"] += 1
+                    elif type(v).__name__ == "Car":
+                        lanes_data[lane_id]["cars"] += 1
+
+        payload = {
+            "timestamp": int(time.time()),
+            "device_id": "pi5_intersection_master",
+            "data": [
+                {"lane": lane_id, "cars": counts["cars"], "bikes": counts["bikes"]}
+                for lane_id, counts in sorted(lanes_data.items())
+            ]
+        }
+        
+        try:
+            self.mqtt_client.publish(TELEMETRY_TOPIC, json.dumps(payload))
+        except Exception as e:
+            print(f"Lỗi khi gửi telemetry: {e}")
 
     def _draw_aruco_markers(self, surface):
         # Vẽ 4 ArUco markers để nhận diện và canh lề 4 góc.
