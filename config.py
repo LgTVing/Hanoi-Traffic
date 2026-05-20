@@ -7,11 +7,11 @@
 # Giá trị này chủ yếu dùng làm mặc định ban đầu trước khi layout được đồng bộ theo màn hình thật.
 WINDOW_SIZE = 1000
 # Chế độ hiển thị: fullscreen theo độ phân giải thật của màn hình.
-FULLSCREEN_ENABLED = True
+FULLSCREEN_ENABLED = False
 # Kích thước fallback khi không chạy fullscreen.
 # Hai giá trị này chỉ có tác dụng khi FULLSCREEN_ENABLED = False.
-DEFAULT_SCREEN_WIDTH = 1920
-DEFAULT_SCREEN_HEIGHT = 1080
+DEFAULT_SCREEN_WIDTH = 1280
+DEFAULT_SCREEN_HEIGHT = 720
 
 # Cấu hình lưới ngã tư tự động theo màn hình.
 # Ví dụ 2x2 => tổng cộng 4 giao lộ từ tích Descartes của trục X và trục Y.
