@@ -10,12 +10,15 @@ Luồng chạy chính:
 
 import pygame
 import sys
+import random
+import json
 from config import BG_COLOR, FULLSCREEN_ENABLED, DEFAULT_SCREEN_WIDTH, DEFAULT_SCREEN_HEIGHT
 from road_layout import configure_layout
 from Simulation import SimulationMap
 
 
 def main():
+    random.seed(42)  # Cố định random seed để kết quả mô phỏng ổn định khi so sánh
     # Bắt buộc gọi init trước khi dùng display, time, event...
     pygame.init()
 
@@ -104,6 +107,15 @@ def main():
 
     # Giải phóng tài nguyên pygame và kết thúc tiến trình Python.
     pygame.quit()
+
+    metrics = sim_map.vehicle_controller.metrics
+    metrics["average_wait_time"] = metrics["total_wait_time"] / metrics["total_completed"] if metrics["total_completed"] > 0 else 0
+    metrics["average_travel_time"] = metrics["total_travel_time"] / metrics["total_completed"] if metrics["total_completed"] > 0 else 0
+    
+    with open("simulation_report.json", "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=4, ensure_ascii=False)
+    print("Đã lưu kết quả report vào simulation_report.json")
+
     sys.exit()
 
 

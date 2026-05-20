@@ -33,6 +33,13 @@ class VehicleController:
         # vehicles: danh sách phương tiện dùng chung với lớp SimulationMap.
         self.vehicles = vehicles
 
+        self.metrics = {
+            "total_spawned": 0,
+            "total_completed": 0,
+            "total_wait_time": 0.0,
+            "total_travel_time": 0.0
+        }
+
     def _lane_span(self):
         # Khoảng cách chuẩn giữa 2 tâm làn liên tiếp.
         if len(LANES) < 2:
@@ -243,7 +250,15 @@ class VehicleController:
                 v.update_position(dt)
 
         # Dọn xe theo biên hạ tầng hiện tại (không phụ thuộc cứng vào WINDOW_SIZE).
-        self.vehicles[:] = [v for v in self.vehicles if is_inside_cleanup_bounds(v.x, v.y)]
+        kept_vehicles = []
+        for v in self.vehicles:
+            if is_inside_cleanup_bounds(v.x, v.y):
+                kept_vehicles.append(v)
+            else:
+                self.metrics["total_completed"] += 1
+                self.metrics["total_wait_time"] += getattr(v, 'wait_time', 0.0)
+                self.metrics["total_travel_time"] += getattr(v, 'travel_time', 0.0)
+        self.vehicles[:] = kept_vehicles
 
     def _spawn_vehicles(self):
         # Giới hạn tổng số xe để giữ hiệu năng ổn định.
@@ -292,6 +307,7 @@ class VehicleController:
                         # if: chỉ thêm xe khi đã qua kiểm tra an toàn spawn.
                         if safe_to_spawn:
                             self.vehicles.append(new_v)
+                            self.metrics["total_spawned"] += 1
 
     def _get_dist_to_center(self, v, ic):
         # Khoảng cách có dấu từ xe tới tâm giao lộ theo chiều chuyển động hiện tại.

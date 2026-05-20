@@ -66,6 +66,9 @@ class Vehicle:
         self.angles = {NORTH: 0, WEST: 90, SOUTH: 180, EAST: 270}
         self.visual_angle = self.angles[self.direction]
 
+        self.wait_time = 0.0
+        self.travel_time = 0.0
+
     def init_position(self):
         # Chọn làn ban đầu theo ý định, rồi đặt xe tại mép ngoài màn hình.
         self.target_offset = get_target_offset(self.turn_intention)
@@ -111,6 +114,10 @@ class Vehicle:
         self.curve_length = (d1 + d2) * 0.75
 
     def update_position(self, dt):
+        self.travel_time += dt
+        if self.current_speed == 0:
+            self.wait_time += dt
+
         # if lớn 1: xe đang ở trạng thái cua theo Bezier.
         if self.is_turning:
             # Nếu xe dừng (current_speed = 0) do tránh va chạm, turn_t không tăng -> xe dừng mượt giữa đường cong
