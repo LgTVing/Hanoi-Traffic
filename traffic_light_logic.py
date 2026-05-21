@@ -61,6 +61,10 @@ class Intersection:
                 if self.lights[d][action]["timer"] > 0:
                     self.lights[d][action]["timer"] -= dt
                 
+                # Chuyển đèn xanh sang vàng khi còn dưới 0.25s để chuẩn bị dừng luồng xe
+                if self.lights[d][action]["state"] == "green" and 0 < self.lights[d][action]["timer"] <= 0.5:
+                    self.lights[d][action]["state"] = "yellow"
+                
                 # Hết thời gian mà chưa có lệnh mới: hoạt động như đèn bình thường (luân phiên 20s)
                 if self.lights[d][action]["timer"] <= 0:
                     if self.lights[d][action]["state"] in ["green", "yellow"]:
