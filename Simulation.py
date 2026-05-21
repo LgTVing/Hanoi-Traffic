@@ -51,6 +51,8 @@ class SimulationMap:
         self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.mqtt_client.on_message = self.on_mqtt_message
         self.last_telemetry_time = time.time()
+        self.last_payload_time = time.time()
+        self.is_offline_mode = False
         try:
             self.mqtt_client.connect(BROKER, PORT)
             self.mqtt_client.subscribe(TOPIC)
@@ -61,6 +63,11 @@ class SimulationMap:
 
     def on_mqtt_message(self, client, userdata, msg):
         try:
+            self.last_payload_time = time.time()
+            if self.is_offline_mode:
+                self.is_offline_mode = False
+                print("Đã nhận lại MQTT payload, tiếp tục điều khiển từ xa!")
+
             payload = json.loads(msg.payload.decode())
 
             # save payload to file 
@@ -83,8 +90,16 @@ class SimulationMap:
         for ic in self.intersections:
             ic.update(dt)
 
-        # 3) Gửi telemetry mỗi 0.5s
+        # 3) Kiểm tra mất mạng (timeout > 7s)
         current_time = time.time()
+        if not self.is_offline_mode and current_time - self.last_payload_time > 7.0:
+            self.is_offline_mode = True
+            print("Mất kết nối MQTT quá 7s, chuyển đèn về chế độ tuần tự mặc định!")
+            for ic in self.intersections:
+                if hasattr(ic, 'reset_to_default'):
+                    ic.reset_to_default()
+
+        # 4) Gửi telemetry mỗi 0.5s
         if current_time - self.last_telemetry_time >= 0.5:
             self.last_telemetry_time = current_time
             self.send_telemetry()

@@ -54,6 +54,20 @@ class Intersection:
         # Số xe chờ theo hướng (cập nhật từ VehicleController mỗi frame).
         self.waiting_counts = {NORTH: 0, SOUTH: 0, EAST: 0, WEST: 0}
 
+    def reset_to_default(self):
+        for direction in [NORTH, EAST, SOUTH, WEST]:
+            self.lights[direction]["straight"] = {"state": "red", "timer": 20.0}
+            self.lights[direction]["left"] = {"state": "red", "timer": 20.0}
+
+        if self.intersection_id in [0, 3]:
+            for d in [NORTH, SOUTH]:
+                self.lights[d]["straight"]["state"] = "green"
+                self.lights[d]["left"]["state"] = "green"
+        elif self.intersection_id in [1, 2]:
+            for d in [EAST, WEST]:
+                self.lights[d]["straight"]["state"] = "green"
+                self.lights[d]["left"]["state"] = "green"
+
     def update(self, dt):
         # Trừ timer đếm ngược
         for d in self.lights:
