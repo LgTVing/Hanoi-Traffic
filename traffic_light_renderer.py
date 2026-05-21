@@ -90,16 +90,20 @@ def draw_traffic_signals(surface, intersections):
         # Dịch cụm đèn vào gần tâm giao lộ để dễ quan sát xe dừng trước vạch.
         inset_to_center = 18
 
-        # Lấy mode hiển thị cho trục Bắc/Nam.
-        mode_ns = ic.get_display_mode_for_direction(NORTH)
+        # Lấy mode hiển thị cho xe CHẠY HƯỚNG BẮC (từ Nam lên) và CHẠY HƯỚNG NAM (từ Bắc xuống)
+        mode_heading_north = ic.get_display_mode_for_direction(NORTH)
+        mode_heading_south = ic.get_display_mode_for_direction(SOUTH)
 
-        # Đặt 2 đèn NS ở hai đầu stop line, quay icon để cùng hướng quan sát lái xe.
-        draw_signal(ic.cx - 40, ic.cy - STOP_LINE_DIST + inset_to_center, mode_ns, angle_rad=math.pi)
-        draw_signal(ic.cx + 40, ic.cy + STOP_LINE_DIST - inset_to_center, mode_ns, angle_rad=0.0)
+        # Đèn cho luồng xe TỪ BẮC XUỐNG NAM (xe chạy hướng SOUTH) -> đặt ở vạch dừng phía BẮC (y - STOP_LINE_DIST)
+        draw_signal(ic.cx - 40, ic.cy - STOP_LINE_DIST + inset_to_center, mode_heading_south, angle_rad=math.pi)
+        # Đèn cho luồng xe TỪ NAM LÊN BẮC (xe chạy hướng NORTH) -> đặt ở vạch dừng phía NAM (y + STOP_LINE_DIST)
+        draw_signal(ic.cx + 40, ic.cy + STOP_LINE_DIST - inset_to_center, mode_heading_north, angle_rad=0.0)
 
-        # Lấy mode hiển thị cho trục Đông/Tây.
-        mode_ew = ic.get_display_mode_for_direction(EAST)
+        # Lấy mode hiển thị cho xe CHẠY HƯỚNG ĐÔNG (từ Tây sang) và CHẠY HƯỚNG TÂY (từ Đông sang)
+        mode_heading_east = ic.get_display_mode_for_direction(EAST)
+        mode_heading_west = ic.get_display_mode_for_direction(WEST)
 
-        # Đặt 2 đèn EW lệch phải theo chiều lưu thông hiện hành.
-        draw_signal(ic.cx - STOP_LINE_DIST + inset_to_center, ic.cy + 40, mode_ew, angle_rad=math.pi / 2)
-        draw_signal(ic.cx + STOP_LINE_DIST - inset_to_center, ic.cy - 40, mode_ew, angle_rad=-math.pi / 2)
+        # Đèn cho luồng xe TỪ TÂY SANG ĐÔNG (xe chạy hướng EAST) -> đặt ở vạch dừng phía TÂY (x - STOP_LINE_DIST)
+        draw_signal(ic.cx - STOP_LINE_DIST + inset_to_center, ic.cy + 40, mode_heading_east, angle_rad=math.pi / 2)
+        # Đèn cho luồng xe TỪ ĐÔNG SANG TÂY (xe chạy hướng WEST) -> đặt ở vạch dừng phía ĐÔNG (x + STOP_LINE_DIST)
+        draw_signal(ic.cx + STOP_LINE_DIST - inset_to_center, ic.cy - 40, mode_heading_west, angle_rad=-math.pi / 2)

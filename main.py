@@ -108,9 +108,11 @@ def main():
     # Giải phóng tài nguyên pygame và kết thúc tiến trình Python.
     pygame.quit()
 
+    from spawn_config import SPAWN_RATES
     metrics = sim_map.vehicle_controller.metrics
     metrics["average_wait_time"] = metrics["total_wait_time"] / metrics["total_completed"] if metrics["total_completed"] > 0 else 0
     metrics["average_travel_time"] = metrics["total_travel_time"] / metrics["total_completed"] if metrics["total_completed"] > 0 else 0
+    metrics["setting"] = SPAWN_RATES
     
     with open("simulation_report.json", "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=4, ensure_ascii=False)

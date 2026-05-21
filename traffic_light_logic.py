@@ -13,15 +13,20 @@ class Intersection:
         self.intersection_id = intersection_id
 
         # Khởi tạo lane mapping theo protocol
+        # self.lane_mapping là ánh xạ: Hướng di chuyển (v.direction) -> Lane ID theo PROTOCOL.md
+        # Xe đi hướng SOUTH (từ Bắc xuống Nam) -> Lane Bắc (N)
+        # Xe đi hướng NORTH (từ Nam lên Bắc) -> Lane Nam (S)
+        # Xe đi hướng EAST (từ Tây sang Đông) -> Lane Tây (W)
+        # Xe đi hướng WEST (từ Đông sang Tây) -> Lane Đông (E)
         self.lane_mapping = {}
         if intersection_id == 0:
-            self.lane_mapping = {NORTH: 10, EAST: 3, SOUTH: 9, WEST: 0}
+            self.lane_mapping = {SOUTH: 10, WEST: 3, NORTH: 9, EAST: 0}
         elif intersection_id == 1:
-            self.lane_mapping = {NORTH: 14, EAST: 2, SOUTH: 13, WEST: 1}
+            self.lane_mapping = {SOUTH: 14, WEST: 2, NORTH: 13, EAST: 1}
         elif intersection_id == 2:
-            self.lane_mapping = {NORTH: 11, EAST: 7, SOUTH: 8, WEST: 4}
+            self.lane_mapping = {SOUTH: 11, WEST: 7, NORTH: 8, EAST: 4}
         elif intersection_id == 3:
-            self.lane_mapping = {NORTH: 15, EAST: 6, SOUTH: 12, WEST: 5}
+            self.lane_mapping = {SOUTH: 15, WEST: 6, NORTH: 12, EAST: 5}
 
         # Ánh xạ ngược từ lane_id sang hướng (direction)
         self.lane_to_dir = {v: k for k, v in self.lane_mapping.items()}
@@ -64,9 +69,29 @@ class Intersection:
                         self.lights[d][action]["state"] = "green"
                     self.lights[d][action]["timer"] = 20.0
 
+        """
+        {
+            "intersection_id": 1,
+            "lanes": [
+                {
+                    "lane_id": 8,
+                    "straight": {
+                        "state": "red",
+                        "duration": 1
+                    },
+                    "left": {
+                        "state": "red",
+                        "duration": 1
+                    }
+                },
+        """
+
     def apply_command(self, lanes_data):
+        # print("apply_command for intersection: ", self.intersection_id)
+        # print("lanes data: ", lanes_data)
         # Cập nhật trạng thái đèn từ MQTT payload
         for lane_cmd in lanes_data:
+            # print("lane_cmd: ", lane_cmd)
             lane_id = lane_cmd.get("lane_id")
             if lane_id in self.lane_to_dir:
                 d = self.lane_to_dir[lane_id]

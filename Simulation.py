@@ -62,6 +62,11 @@ class SimulationMap:
     def on_mqtt_message(self, client, userdata, msg):
         try:
             payload = json.loads(msg.payload.decode())
+
+            # save payload to file 
+            # with open(f"payloads/p{time.time()}.json", "a", encoding="utf-8") as f:
+            #     json.dump(payload, f, indent=4, ensure_ascii=False)
+
             for ic_data in payload.get("intersections", []):
                 ic_id = ic_data.get("intersection_id")
                 if ic_id is not None and 0 <= ic_id < len(self.intersections):
